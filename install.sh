@@ -3,24 +3,45 @@
 set -e
 
 API_URL="https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest"
-FILE_PATTERN="linux-arm64.tar.gz"
 TMP_DIR="/tmp/sing-box-install"
 ARCHIVE_NAME="sing-box-latest.tar.gz"
 DEST_FILE="/usr/bin/sing-box"
 
-echo "[*] Ищу последнюю версию для $FILE_PATTERN..."
+HOST_ARCH=$(uname -m)
+echo "[*] Ваша архитектура: $HOST_ARCH"
 
-DOWNLOAD_URL=$(wget -qO- "$API_URL" | tr ',' '\n' | grep "browser_download_url" | grep "$FILE_PATTERN" | awk -F '"' '{print $4}')
+case $HOST_ARCH in
+  aarch64)
+    ARCH_SUFFIX="arm64"
+    ;;
+  armv7*)
+    ARCH_SUFFIX="armv7"
+    ;;
+  x86_64)
+    ARCH_SUFFIX="amd64"
+    ;;
+  mips | mipsle | mipsel)
+    ARCH_SUFFIX="mipsle"
+    ;;
+  *)
+    echo "[!] ОШИБКА: Архитектура $HOST_ARCH не поддерживается."
+    exit 1
+    ;;
+esac
+
+FILE_PATTERN="linux-$ARCH_SUFFIX.tar.gz"
+echo "[*] Целевой файл: $FILE_PATTERN"
+
+echo "[*] Ищу ссылку на GitHub..."
+DOWNLOAD_URL=$(wget -qO- "$API_URL" | tr ',' '\n' | grep "browser_download_url" | grep "$FILE_PATTERN" | head -n 1 | awk -F '"' '{print $4}')
 
 if [ -z "$DOWNLOAD_URL" ]; then
-    echo "[!] ОШИБКА: Не смог найти URL для скачивания."
-    echo "Проверь $FILE_PATTERN или репозиторий. Может, ГитХаб лежит?"
+    echo "[!] ОШИБКА: Ссылка не найдена."
     exit 1
 fi
 
-echo "[+] Нашел: $DOWNLOAD_URL"
+echo "[+] Ссылка: $DOWNLOAD_URL"
 
-echo "[*] Готовлю место в /tmp..."
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 cd "$TMP_DIR"
@@ -28,34 +49,32 @@ cd "$TMP_DIR"
 echo "[*] Качаю..."
 wget -O "$ARCHIVE_NAME" "$DOWNLOAD_URL"
 
-echo "[*] Гашу старый sing-box... (если он запущен)"
-service sing-box stop >/dev/null 2>&1 || true
-killall sing-box >/dev/null 2>&1 || true
-
-echo "[*] Распаковываю архив (полностью)..."
-tar -xzf "$ARCHIVE_NAME"
-
-echo "[*] Ищу бинарный файл..."
-BINARY_PATH=$(find . -type f -name sing-box | head -n 1)
-
-if [ -z "$BINARY_PATH" ]; then
-    echo "[!] ОШИБКА: Архив распаковался, но внутри нет файла 'sing-box'!"
+if [ ! -s "$ARCHIVE_NAME" ]; then
+    echo "[!] ОШИБКА: Файл пустой."
     exit 1
 fi
 
-echo "[+] Файл найден: $BINARY_PATH"
+echo "[*] Останавливаю sing-box..."
+service sing-box stop >/dev/null 2>&1 || true
+killall sing-box >/dev/null 2>&1 || true
 
-echo "[*] Ставлю новый бинарник в $DEST_FILE..."
-mv "$BINARY_PATH" "$DEST_FILE"
+echo "[*] Распаковываю..."
+tar -xzf "$ARCHIVE_NAME"
 
-echo "[*] Даю права на запуск..."
+echo "[*] Ищу бинарник..."
+BINARY_PATH=$(find . -type f -name sing-box | head -n 1)
+
+if [ -z "$BINARY_PATH" ]; then
+    echo "[!] ОШИБКА: Бинарник не найден."
+    exit 1
+fi
+
+echo "[*] Обновляю файл в $DEST_FILE..."
+mv -f "$BINARY_PATH" "$DEST_FILE"
 chmod +x "$DEST_FILE"
 
-echo "[*] Убираю за собой мусор (архив и распакованные папки)..."
 cd /
 rm -rf "$TMP_DIR"
 
-echo "[+] Готово! Обновление установлено."
-echo "--- Перезагружаюсь... ---"
-
+echo "[+] Успешно! Перезагружаю роутер..."
 reboot
