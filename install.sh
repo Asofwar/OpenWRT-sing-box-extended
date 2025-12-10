@@ -26,15 +26,14 @@ echo 3 > /proc/sys/vm/drop_caches
 FREE_RAM_KB=$(awk '/MemFree/ {print $2}' /proc/meminfo)
 
 if [ "$FREE_RAM_KB" -gt 81920 ]; then
-    echo "[*] Свободной памяти достаточно. Использую RAM (/tmp)."
+    echo "[*] Памяти достаточно. Использую RAM (/tmp)."
     WORK_DIR="/tmp/sing-box-install"
 else
-    echo "[*] Мало свободной памяти. Использую Flash-память ($HOME)."
+    echo "[*] Мало памяти. Использую Flash ($HOME)."
     WORK_DIR="$HOME/sing-box-install_tmp"
 fi
 
 FILE_PATTERN="linux-$ARCH_SUFFIX.tar.gz"
-echo "[*] Целевой файл: $FILE_PATTERN"
 
 echo "[*] Ищу ссылку на GitHub..."
 DOWNLOAD_URL=$(wget -qO- "$API_URL" | tr ',' '\n' | grep "browser_download_url" | grep "$FILE_PATTERN" | head -n 1 | awk -F '"' '{print $4}')
@@ -44,14 +43,13 @@ if [ -z "$DOWNLOAD_URL" ]; then
     exit 1
 fi
 
-echo "[+] Ссылка: $DOWNLOAD_URL"
-
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
-echo "[*] Качаю..."
-wget --no-check-certificate -O "$ARCHIVE_NAME" "$DOWNLOAD_URL"
+echo "[*] Качаю обновление..."
+
+wget -q --no-check-certificate -O "$ARCHIVE_NAME" "$DOWNLOAD_URL"
 
 if [ ! -s "$ARCHIVE_NAME" ]; then
     echo "[!] ОШИБКА: Файл пустой."
