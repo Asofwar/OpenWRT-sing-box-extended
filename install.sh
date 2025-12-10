@@ -36,13 +36,6 @@ fi
 FILE_PATTERN="linux-$ARCH_SUFFIX.tar.gz"
 echo "[*] Целевой файл: $FILE_PATTERN"
 
-if [ -f "$DEST_FILE" ]; then
-    echo "[*] Останавливаю текущий sing-box..."
-    service sing-box stop >/dev/null 2>&1 || true
-    killall sing-box >/dev/null 2>&1 || true
-    sleep 3
-fi
-
 echo "[*] Ищу ссылку на GitHub..."
 DOWNLOAD_URL=$(wget -qO- "$API_URL" | tr ',' '\n' | grep "browser_download_url" | grep "$FILE_PATTERN" | head -n 1 | awk -F '"' '{print $4}')
 
@@ -64,6 +57,16 @@ if [ ! -s "$ARCHIVE_NAME" ]; then
     echo "[!] ОШИБКА: Файл пустой."
     exit 1
 fi
+
+if [ -f "$DEST_FILE" ]; then
+    echo "[*] Останавливаю текущий sing-box..."
+    service sing-box stop >/dev/null 2>&1 || true
+    killall sing-box >/dev/null 2>&1 || true
+    sleep 3
+fi
+
+sync
+echo 3 > /proc/sys/vm/drop_caches
 
 echo "[*] Распаковываю..."
 tar -xzf "$ARCHIVE_NAME"
