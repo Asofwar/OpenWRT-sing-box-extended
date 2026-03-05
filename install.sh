@@ -35,6 +35,14 @@ else
 fi
 HOST_ARCH=$(uname -m)
 
+if [ -f "/etc/openwrt_release" ]; then
+    DISTRIB_ARCH=$(. /etc/openwrt_release && echo "$DISTRIB_ARCH")
+    case "$DISTRIB_ARCH" in
+        *mipsel* | *mipsle*) HOST_ARCH="mipsel" ;;
+        *mips64el* | *mips64le*) HOST_ARCH="mips64el" ;;
+    esac
+fi
+
 case $HOST_ARCH in
   aarch64)                ARCH_SUFFIX="arm64" ;;
   armv7*)                 ARCH_SUFFIX="armv7" ;;
