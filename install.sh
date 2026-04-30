@@ -1,6 +1,6 @@
 #!/bin/sh
 
-API_URL="https://api.github.com/repos/shtorm-7/sing-box-extended/releases/latest"
+API_URL="https://api.github.com/repos/shtorm-7/sing-box-extended/releases?per_page=30"
 ARCHIVE_NAME="sing-box-latest.tar.gz"
 DEST_FILE="/usr/bin/sing-box"
 
@@ -10,6 +10,8 @@ Y="\033[1;33m"
 C="\033[1;36m"
 N="\033[0m"
 
+trap 'printf "\n${R}[!] Установка прервана.${N}\n"; [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"; [ "$SERVICE_STOPPED" = "1" ] && service "$SERVICE_NAME" start 2>/dev/null; exit 1' INT TERM
+
 fail() {
     printf "${R}[!] ОШИБКА: %s${N}\n" "$1"
     [ -n "$WORK_DIR" ] && rm -rf "$WORK_DIR"
@@ -18,11 +20,11 @@ fail() {
 }
 
 if command -v curl >/dev/null 2>&1; then
-    FETCH="curl -fsSL --insecure"
-    DOWNLOAD="curl -fsSL --insecure -o"
+    FETCH="curl -fsSL --insecure --connect-timeout 15"
+    DOWNLOAD="curl -fsSL --insecure --connect-timeout 15 -o"
 elif command -v wget >/dev/null 2>&1; then
-    FETCH="wget -qO- --no-check-certificate"
-    DOWNLOAD="wget -q --no-check-certificate -O"
+    FETCH="wget -qO- --no-check-certificate --timeout=15"
+    DOWNLOAD="wget -q --no-check-certificate --timeout=15 -O"
 else
     printf "${R}[!] ОШИБКА: Не найден curl или wget.${N}\n"
     exit 1
@@ -66,26 +68,72 @@ if [ -f "$DEST_FILE" ]; then
     CURRENT_VER=$("$DEST_FILE" version 2>/dev/null | head -n 1 | awk '{print $NF}') || true
 fi
 
-printf "${C}[*] Проверяю обновления...${N}\n"
+printf "${C}[*] Получаю список последних версий...${N}\n"
 API_RESPONSE=$($FETCH "$API_URL" 2>/dev/null) || true
 
 if [ -z "$API_RESPONSE" ]; then
     fail "Не удалось подключиться к GitHub API. Проверьте соединение."
 fi
 
-LATEST_TAG=$(echo "$API_RESPONSE" | tr ',' '\n' | grep '"tag_name"' | head -n 1 | awk -F '"' '{print $4}')
-LATEST_VER=$(echo "$LATEST_TAG" | sed 's/^v//')
+RELEASES=$(echo "$API_RESPONSE" \
+  | tr ',' '\n' \
+  | grep '"tag_name"' \
+  | awk -F '"' '{print $4}' \
+  | grep -v -i "rc" \
+  | grep -v -i "beta" \
+  | grep -v -i "alpha" \
+  | head -n 5)
 
-printf "${C}[*] Текущая: ${Y}${CURRENT_VER:-не установлен}${C} | Последняя: ${Y}${LATEST_VER:-неизвестно}${N}\n"
+if [ -z "$RELEASES" ]; then
+    fail "Не удалось получить список стабильных релизов из API."
+fi
 
-if [ -n "$CURRENT_VER" ] && [ -n "$LATEST_VER" ] && [ "$CURRENT_VER" = "$LATEST_VER" ]; then
-    printf "${G}[+] Уже установлена последняя версия. Обновление не требуется.${N}\n"
+printf "\n${C}[*] Доступные стабильные версии для установки:${N}\n"
+i=1
+for tag in $RELEASES; do
+    printf "  ${Y}%d)${N} %s\n" "$i" "$tag"
+    i=$((i+1))
+done
+printf "  ${Y}0)${N} Отмена\n"
+
+printf "\n${C}[?] Выберите версию (0-$((i-1))): ${N}"
+read -r choice
+
+if [ "$choice" = "0" ]; then
+    printf "${G}[*] Установка отменена.${N}\n"
     exit 0
 fi
 
+SELECTED_TAG=""
+i=1
+for tag in $RELEASES; do
+    if [ "$choice" = "$i" ]; then
+        SELECTED_TAG="$tag"
+        break
+    fi
+    i=$((i+1))
+done
+
+if [ -z "$SELECTED_TAG" ]; then
+    fail "Неверный выбор. Пожалуйста, введите корректный номер из списка."
+fi
+
+SELECTED_VER=$(echo "$SELECTED_TAG" | sed 's/^v//')
+
+printf "\n${C}[*] Текущая: ${Y}${CURRENT_VER:-не установлен}${C} | Выбранная: ${Y}${SELECTED_VER}${N}\n"
+
+if [ -n "$CURRENT_VER" ] && [ "$CURRENT_VER" = "$SELECTED_VER" ]; then
+    printf "${Y}[!] Эта версия уже установлена. Выполняю переустановку...${N}\n"
+fi
+
+printf "${C}[*] Ищу ссылку на скачивание для версии $SELECTED_TAG...${N}\n"
+
+RELEASE_URL="https://api.github.com/repos/shtorm-7/sing-box-extended/releases/tags/$SELECTED_TAG"
+RELEASE_RESPONSE=$($FETCH "$RELEASE_URL" 2>/dev/null) || true
+
 FILE_PATTERN="linux-$ARCH_SUFFIX.tar.gz"
 
-DOWNLOAD_URL=$(echo "$API_RESPONSE" \
+DOWNLOAD_URL=$(echo "$RELEASE_RESPONSE" \
   | tr ',' '\n' \
   | grep "browser_download_url" \
   | grep "$FILE_PATTERN" \
@@ -93,7 +141,7 @@ DOWNLOAD_URL=$(echo "$API_RESPONSE" \
   | awk -F '"' '{print $4}')
 
 if [ -z "$DOWNLOAD_URL" ]; then
-    fail "Файл для архитектуры '$HOST_ARCH' ($ARCH_SUFFIX) не найден."
+    fail "Файл для архитектуры '$HOST_ARCH' ($ARCH_SUFFIX) не найден в релизе $SELECTED_TAG."
 fi
 
 sync
